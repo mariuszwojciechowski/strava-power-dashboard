@@ -1,0 +1,11 @@
+.env
+tokens.json
+strava_data.db
+venv/
+__pycache__/
+app.pid
+app.log
+sync.log
+components_data.json
+lab_tests.json
+.DS_Store

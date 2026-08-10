@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>Ustawienia - Strava piki mocy</title>
+  <style>
+    body { font-family: -apple-system, Arial, sans-serif; margin: 24px; background: #f7f7f8; color: #1a1a1a; max-width: 720px; }
+    h1 { font-size: 20px; }
+    h2 { font-size: 15px; margin: 0 0 6px; }
+    a { color: #1f6feb; }
+    .back { display: inline-block; margin-bottom: 16px; font-size: 13px; }
+    .card { background: white; border-radius: 8px; padding: 16px 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .hint { color: #666; font-size: 12.5px; margin: 4px 0 12px; line-height: 1.5; }
+    label { display: block; font-size: 13px; margin-bottom: 4px; margin-top: 10px; font-weight: 600; }
+    input[type=text], input[type=password] { width: 100%; padding: 7px 9px; font-size: 14px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+    select { width: 100%; padding: 7px 9px; font-size: 14px; }
+    button { padding: 8px 14px; font-size: 14px; margin-top: 12px; cursor: pointer; border-radius: 5px; border: 1px solid #1f6feb; background: #1f6feb; color: white; }
+    button.secondary { background: white; color: #1f6feb; }
+    .status-ok { color: #1e7e34; font-weight: 600; }
+    .status-bad { color: #b3261e; font-weight: 600; }
+    .message { background: #e6f4ea; color: #1e7e34; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    .error { background: #fdecea; color: #b3261e; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+    .bike-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #f2f2f2; }
+    .bike-item label { display: flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; flex: 1; }
+    .bike-item input[type=text] { width: 220px; }
+    .muted { color: #999; font-size: 11.5px; }
+    .manual-add { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+    .manual-add > div { flex: 1; }
+    .remove-link { color: #b3261e; font-size: 12px; }
+    textarea { width: 100%; box-sizing: border-box; padding: 8px 9px; font-size: 12.5px; font-family: ui-monospace, monospace; border: 1px solid #ccc; border-radius: 5px; resize: vertical; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">&larr; Powrót do dashboardu</a>
+  <h1>Ustawienia</h1>
+
+  {% if message %}<div class="message">{{ message }}</div>{% endif %}
+  {% if request.args.get('error') %}<div class="error">Autoryzacja nie powiodła się: {{ request.args.get('error') }}</div>{% endif %}
+
+  <div class="card">
+    <h2>1. Aplikacja Strava API</h2>
+    <p class="hint">
+      Załóż własną aplikację na
+      <a href="https://www.strava.com/settings/api" target="_blank">strava.com/settings/api</a>
+      (jeśli jeszcze nie masz). W polu <strong>Authorization Callback Domain</strong> wpisz
+      <code>localhost</code>. Wklej poniżej Client ID i Client Secret z tej strony.
+    </p>
+    <form method="post">
+      <input type="hidden" name="action" value="save_credentials">
+      <label>Client ID</label>
+      <input type="text" name="client_id" value="{{ client_id }}" placeholder="np. 12345">
+      <label>Client Secret</label>
+      <input type="password" name="client_secret" placeholder="{{ 'zapisany - wpisz ponownie, żeby zmienić' if has_credentials else '' }}">
+      <button type="submit">Zapisz</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>2. Autoryzacja konta Strava</h2>
+    {% if has_tokens and athlete %}
+      <p class="status-ok">Połączono z kontem: {{ athlete.firstname }} {{ athlete.lastname }} ({{ athlete.username }})</p>
+      <a href="/oauth/authorize"><button class="secondary" type="button">Autoryzuj ponownie</button></a>
+    {% elif has_tokens and auth_error %}
+      <p class="status-bad">Token zapisany, ale połączenie z API nie działa: {{ auth_error }}</p>
+      <a href="/oauth/authorize"><button type="button">Autoryzuj ponownie</button></a>
+    {% else %}
+      <p class="status-bad">Nie autoryzowano.</p>
+      {% if has_credentials %}
+        <a href="/oauth/authorize"><button type="button">Autoryzuj przez Stravę</button></a>
+      {% else %}
+        <p class="hint">Najpierw zapisz Client ID i Client Secret powyżej.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>3. Wybór rowerów</h2>
+    <p class="hint">Zaznacz dowolną liczbę rowerów ze swojego konta Strava, dla których aplikacja ma śledzić piki mocy, prędkość i eksploatację. Możesz zmienić nazwę wyświetlaną w dashboardzie.</p>
+
+    {% if available_bikes %}
+      <form method="post">
+        <input type="hidden" name="action" value="save_bikes">
+        {% for b in available_bikes %}
+        <div class="bike-item">
+          <label>
+            <input type="checkbox" name="bike_selected" value="{{ b.id }}" {% if b.id in bikes %}checked{% endif %}>
+            {{ b.nickname or b.name }} <span class="muted">({{ b.id }})</span>
+          </label>
+          <input type="text" name="name_{{ b.id }}" value="{{ bikes.get(b.id, b.nickname or b.name) }}" placeholder="Nazwa do wyświetlania">
+        </div>
+        {% endfor %}
+        <button type="submit">Zapisz wybrane rowery</button>
+      </form>
+    {% else %}
+      <p class="hint">Autoryzuj się wyżej, żeby zobaczyć i zaznaczyć rowery z listy. Do tego czasu możesz dodać rower ręcznie, podając jego gear_id:</p>
+      {% if bikes %}
+        <ul>
+          {% for gear_id, name in bikes.items() %}
+          <li>{{ name }} ({{ gear_id }})
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="remove_bike">
+              <input type="hidden" name="gear_id" value="{{ gear_id }}">
+              <button type="submit" class="remove-link" style="background:none;border:none;padding:0;">usuń</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <form method="post" class="manual-add">
+        <input type="hidden" name="action" value="add_bike_manual">
+        <div>
+          <label>gear_id</label>
+          <input type="text" name="gear_id" placeholder="np. b12345678">
+        </div>
+        <div>
+          <label>Nazwa</label>
+          <input type="text" name="bike_name" placeholder="np. Szosa">
+        </div>
+        <button type="submit">Dodaj</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>4. Eksploatacja - dane komponentów ze Stravy</h2>
+    <p class="hint">
+      Strava nie udostępnia danych o komponentach (opony, klocki, łańcuch, kaseta, tarcze)
+      przez API, więc wklej je tutaj ręcznie: wejdź na stronę swojego roweru w Stravie
+      (zakładka "Sprzęt" -> rower -> tabela "Components"), zaznacz całą tabelę razem z
+      nagłówkiem i skopiuj, a potem wklej dokładnie w to pole. Możesz to powtarzać za
+      każdym razem, gdy coś wymienisz - dane zostaną nadpisane najnowszymi.
+    </p>
+    <form method="post">
+      <input type="hidden" name="action" value="parse_components">
+      <label>Rower, którego dotyczą dane</label>
+      <select name="components_bike">
+        {% for gear_id, name in bikes.items() %}
+        <option value="{{ gear_id }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+      <label>Wklejona tabela komponentów</label>
+      <textarea name="components_raw" rows="10" placeholder="Type&#9;Brand&#9;Model&#9;Added&#9;Removed&#9;Distance&#9;Action&#10;Front Tire&#9;Continental&#9;GP5000&#9;Jul 12, 2026&#9;&#9;809.5 km&#9;Retire | Delete&#10;..."></textarea>
+      <button type="submit">Wczytaj i przetwórz</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>5. Pobranie danych</h2>
+    <p class="hint">
+      Po skonfigurowaniu powyższych ustawień wróć do dashboardu i kliknij
+      <strong>„Synchronizuj ze Stravą”</strong> - pierwsza pełna synchronizacja historii może
+      potrwać dłużej ze względu na limity API Stravy.
+    </p>
+    <a href="/"><button class="secondary" type="button">Wróć do dashboardu</button></a>
+  </div>
+</body>
+</html>

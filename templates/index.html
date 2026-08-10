@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>Strava - piki mocy</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body { font-family: -apple-system, Arial, sans-serif; margin: 24px; background: #f7f7f8; color: #1a1a1a; }
+    h1 { font-size: 20px; }
+    .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    select, button { padding: 6px 10px; font-size: 14px; }
+    button { cursor: pointer; }
+    #status { color: #666; font-size: 13px; margin-left: 8px; }
+    .chart { background: white; border-radius: 8px; padding: 8px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .chart-row { display: flex; gap: 12px; }
+    .chart-plot { flex: 1; min-width: 0; }
+    .hover-panel {
+      width: 230px; flex-shrink: 0; background: #fafafa; border: 1px solid #eee;
+      border-radius: 6px; padding: 10px 12px; font-size: 13px; align-self: flex-start; margin-top: 40px;
+    }
+    .hover-panel .hp-date { font-weight: 600; margin-bottom: 6px; }
+    .hover-panel table { width: 100%; border-collapse: collapse; }
+    .hover-panel td { padding: 3px 0; vertical-align: top; }
+    .hover-panel .hp-label { color: #666; padding-right: 8px; }
+    .hover-panel .hp-value { text-align: right; white-space: nowrap; }
+    .hover-panel .hp-name { color: #999; font-size: 11px; display: block; }
+    .hoverlayer { opacity: 0 !important; }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    .gear-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+    .gear-card { border: 1px solid #eee; border-radius: 8px; padding: 14px 16px; }
+    .gear-card h3 { margin: 0 0 4px; font-size: 15px; }
+    .gear-total { color: #555; font-size: 13px; margin-bottom: 12px; }
+    .gear-total strong { color: #1a1a1a; }
+    .component-block { margin-bottom: 10px; }
+    .component-type { font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; }
+    .component-type .avg-life { font-weight: 400; color: #888; font-size: 12px; }
+    .component-block table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+    .component-block td { padding: 2px 0; border-bottom: 1px solid #f2f2f2; }
+    .component-block td.km { text-align: right; white-space: nowrap; }
+    .badge-active { background: #e6f4ea; color: #1e7e34; border-radius: 4px; padding: 1px 6px; font-size: 10px; margin-left: 6px; }
+    .chain-block { margin-bottom: 10px; font-size: 13px; }
+    .chain-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .chain-bar { background: #eee; border-radius: 4px; height: 8px; overflow: hidden; }
+    .chain-bar-fill { background: #1f6feb; height: 100%; }
+    .chain-bar-fill.warn { background: #d62728; }
+    .chain-sub { color: #777; font-size: 11.5px; margin-top: 3px; }
+    .muted { color: #999; font-size: 13px; }
+    .ftp-cards { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .ftp-card { border: 1px solid #eee; border-radius: 8px; padding: 10px 16px; min-width: 170px; }
+    .ftp-card-label { font-size: 12px; color: #777; }
+    .ftp-card-value { font-size: 26px; font-weight: 700; margin: 2px 0; }
+    .ftp-card-date { font-size: 11px; color: #999; }
+    .ftp-card.lab { border-color: #9467bd; background: #faf8fc; }
+    .ftp-card.lab .ftp-card-value { color: #9467bd; }
+  </style>
+</head>
+<body>
+  <h1>Piki mocy i prędkości maksymalne <a href="/settings" style="font-size:13px; font-weight:400;">Ustawienia</a></h1>
+
+  <div class="controls">
+    <label>Rower:
+      <select id="bike">
+        <option value="all">Wszystkie</option>
+        {% for gear_id, name in bikes.items() %}
+        <option value="{{ gear_id }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Czas trwania (moc):
+      <select id="duration">
+        {% for d in durations %}
+        <option value="{{ d * 60 }}">{{ d }} min</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button id="sync-btn">Synchronizuj ze Stravą</button>
+    <span id="status"></span>
+  </div>
+
+  <div class="chart">
+    <div class="chart-row">
+      <div id="power-chart" class="chart-plot" style="height:420px;"></div>
+      <div id="power-info" class="hover-panel">Najedź na punkt na wykresie, żeby zobaczyć wartości.</div>
+    </div>
+  </div>
+  <div class="chart">
+    <div class="chart-row">
+      <div id="speed-chart" class="chart-plot" style="height:420px;"></div>
+      <div id="speed-info" class="hover-panel">Najedź na punkt na wykresie, żeby zobaczyć wartości.</div>
+    </div>
+  </div>
+
+  <div class="chart">
+    <h2>FTP (szacowane)</h2>
+    <div id="ftp-cards" class="ftp-cards">Ładowanie...</div>
+    <div class="controls">
+      <label>Metoda na wykresie:
+        <select id="ftp-method">
+          <option value="critical_power">Krzywa mocy (3 i 20 min)</option>
+          <option value="sixty_min">60 min wprost</option>
+          <option value="twenty_min_095">20 min &times; 0,95</option>
+        </select>
+      </label>
+    </div>
+    <div class="chart-row">
+      <div id="ftp-chart" class="chart-plot" style="height:420px;"></div>
+      <div id="ftp-info" class="hover-panel">Najedź na punkt na wykresie, żeby zobaczyć wartości.</div>
+    </div>
+  </div>
+
+  <div class="chart">
+    <h2>Eksploatacja rowerów</h2>
+    <div id="gear-cards" class="gear-grid">Ładowanie...</div>
+  </div>
+
+  <script>
+    const BIKE_NAMES = {{ bikes | tojson }};
+  </script>
+  <script>
+    const bikeSel = document.getElementById('bike');
+    const durationSel = document.getElementById('duration');
+    const ftpMethodSel = document.getElementById('ftp-method');
+    const statusEl = document.getElementById('status');
+
+    const FTP_METHOD_LABELS = {
+      critical_power: 'Krzywa mocy (CP)',
+      sixty_min: '60 min wprost',
+      twenty_min_095: '20 min × 0,95',
+    };
+
+    // Wyniki testów laboratoryjnych (próg beztlenowy AnT-LT, ~4 mmol/L mleczanu) - najbliższy
+    // laboratoryjny odpowiednik FTP. Wczytywane z /api/lab-tests (dane prywatne w lab_tests.json).
+    let labFtpTestsCache = null;
+
+    async function getLabFtpTests() {
+      if (!labFtpTestsCache) {
+        labFtpTestsCache = await fetch('/api/lab-tests').then(r => r.json());
+      }
+      return labFtpTestsCache;
+    }
+
+    function labFtpTraces(dateRange, tests) {
+      if (!dateRange.length) return [];
+      const minDate = dateRange.reduce((a, b) => (a < b ? a : b));
+      const maxDate = dateRange.reduce((a, b) => (a > b ? a : b));
+      return tests.map(test => ({
+        x: [minDate, maxDate],
+        y: [test.value, test.value],
+        mode: 'lines',
+        type: 'scatter',
+        name: test.label,
+        line: { color: '#9467bd', width: 2, dash: 'dashdot' },
+      }));
+    }
+
+    const HIDDEN_HOVERLABEL = { bgcolor: 'rgba(0,0,0,0)', bordercolor: 'rgba(0,0,0,0)', font: { color: 'rgba(0,0,0,0)' } };
+
+    function buildTraces(data) {
+      const traces = [
+        {
+          x: data.raw.map(p => p.date),
+          y: data.raw.map(p => p.value),
+          text: data.raw.map(p => p.name),
+          mode: 'markers',
+          type: 'scatter',
+          name: 'Pojedynczy przejazd',
+          marker: { size: 5, color: '#b7c6e0' },
+        },
+        {
+          x: data.monthly_best.map(p => p.date),
+          y: data.monthly_best.map(p => p.value),
+          mode: 'lines+markers',
+          type: 'scatter',
+          name: 'Najlepszy wynik w miesiącu',
+          line: { shape: 'hv', color: '#2ca02c', width: 1, dash: 'dot' },
+          marker: { size: 5, color: '#2ca02c' },
+        },
+        {
+          x: data.rolling_avg.map(p => p.date),
+          y: data.rolling_avg.map(p => p.value),
+          mode: 'lines',
+          type: 'scatter',
+          name: 'Średnia krocząca (3 mies.)',
+          line: { color: '#1f6feb', width: 3 },
+        },
+      ];
+
+      if (data.raw.length) {
+        const best = data.raw.reduce((a, b) => (b.value > a.value ? b : a));
+        traces.push({
+          x: [best.date],
+          y: [best.value],
+          text: [best.name],
+          mode: 'markers',
+          type: 'scatter',
+          name: 'Maksimum globalne',
+          marker: { size: 13, color: '#d62728', symbol: 'star', line: { width: 1, color: '#7a0000' } },
+        });
+      }
+
+      return traces;
+    }
+
+    function monthAxis(dates) {
+      if (!dates.length) return {};
+      const parsed = dates.map(d => new Date(d));
+      const min = new Date(Math.min(...parsed));
+      const max = new Date(Math.max(...parsed));
+      const totalMonths = (max.getFullYear() - min.getFullYear()) * 12 + (max.getMonth() - min.getMonth()) + 1;
+      const step = [1, 2, 3, 6, 12, 24, 36].find(s => totalMonths / s <= 9) || 48;
+      const tick0 = `${min.getFullYear()}-${String(min.getMonth() + 1).padStart(2, '0')}-15`;
+      return { tickmode: 'linear', tick0, dtick: `M${step}`, tickformat: '%b %Y' };
+    }
+
+    function attachHoverPanel(chartId, panelId) {
+      const chartDiv = document.getElementById(chartId);
+      const panel = document.getElementById(panelId);
+      chartDiv.on('plotly_hover', (evt) => {
+        if (!evt.points || !evt.points.length) return;
+        const rows = evt.points.map(pt => {
+          const extra = pt.text ? `<span class="hp-name">${pt.text}</span>` : '';
+          return `<tr><td class="hp-label">${pt.data.name}${extra}</td><td class="hp-value">${Number(pt.y).toFixed(1)}</td></tr>`;
+        }).join('');
+        panel.innerHTML = `<div class="hp-date">${evt.points[0].x}</div><table>${rows}</table>`;
+      });
+    }
+
+    async function loadPower() {
+      const bike = bikeSel.value;
+      const duration = durationSel.value;
+      const resp = await fetch(`/api/power?bike=${bike}&duration=${duration}`);
+      const data = await resp.json();
+      const label = `Moc [${duration / 60} min]`;
+      Plotly.newPlot('power-chart', buildTraces(data), {
+        title: label + ' (W)',
+        yaxis: { title: 'Watt' },
+        xaxis: monthAxis(data.raw.map(p => p.date)),
+        margin: { t: 40 },
+        hovermode: 'x',
+        hoverlabel: HIDDEN_HOVERLABEL,
+      }, { responsive: true });
+      attachHoverPanel('power-chart', 'power-info');
+    }
+
+    async function loadSpeed() {
+      const bike = bikeSel.value;
+      const resp = await fetch(`/api/speed?bike=${bike}`);
+      const data = await resp.json();
+      Plotly.newPlot('speed-chart', buildTraces(data), {
+        title: 'Prędkość maksymalna (km/h)',
+        yaxis: { title: 'km/h' },
+        xaxis: monthAxis(data.raw.map(p => p.date)),
+        margin: { t: 40 },
+        hovermode: 'x',
+        hoverlabel: HIDDEN_HOVERLABEL,
+      }, { responsive: true });
+      attachHoverPanel('speed-chart', 'speed-info');
+    }
+
+    async function loadFtp() {
+      const bike = bikeSel.value;
+      const method = ftpMethodSel.value;
+      const resp = await fetch(`/api/ftp?bike=${bike}&method=${method}`);
+      const data = await resp.json();
+      const labTests = await getLabFtpTests();
+      const dateRange = data.raw.map(p => p.date).concat(labTests.map(t => t.date));
+      const traces = buildTraces(data).concat(labFtpTraces(dateRange, labTests));
+      Plotly.newPlot('ftp-chart', traces, {
+        title: `FTP - ${FTP_METHOD_LABELS[method]} (W)`,
+        yaxis: { title: 'Watt' },
+        xaxis: monthAxis(dateRange),
+        margin: { t: 40 },
+        hovermode: 'x',
+        hoverlabel: HIDDEN_HOVERLABEL,
+      }, { responsive: true });
+      attachHoverPanel('ftp-chart', 'ftp-info');
+    }
+
+    async function loadFtpCards() {
+      const bike = bikeSel.value;
+      const container = document.getElementById('ftp-cards');
+      const methods = Object.keys(FTP_METHOD_LABELS);
+      const results = await Promise.all(
+        methods.map(m => fetch(`/api/ftp?bike=${bike}&method=${m}`).then(r => r.json()))
+      );
+      const methodCards = methods.map((m, i) => {
+        const points = results[i].rolling_avg;
+        const last = points.length ? points[points.length - 1] : null;
+        return `
+          <div class="ftp-card">
+            <div class="ftp-card-label">${FTP_METHOD_LABELS[m]}</div>
+            <div class="ftp-card-value">${last ? Math.round(last.value) + ' W' : '-'}</div>
+            <div class="ftp-card-date">${last ? 'aktualnie, śr. krocząca na ' + last.date : 'brak danych'}</div>
+          </div>
+        `;
+      });
+      const labTests = await getLabFtpTests();
+      const labCards = labTests.map(test => `
+        <div class="ftp-card lab">
+          <div class="ftp-card-label">${test.label}</div>
+          <div class="ftp-card-value">${test.value} W</div>
+          <div class="ftp-card-date">test z dnia ${test.date}</div>
+        </div>
+      `);
+      container.innerHTML = methodCards.concat(labCards).join('');
+    }
+
+    function fmtKm(v) {
+      return `${v.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} km`;
+    }
+
+    function renderComponentBlock(ct) {
+      const rows = ct.items.map(it => `
+        <tr>
+          <td>${it.brand} ${it.model}${it.active ? '<span class="badge-active">aktywny</span>' : ''}</td>
+          <td class="km">${fmtKm(it.km_computed)}</td>
+        </tr>
+      `).join('');
+      const avg = ct.avg_lifetime_km != null
+        ? `<span class="avg-life">śr. żywotność ${fmtKm(ct.avg_lifetime_km)}</span>`
+        : '';
+      return `
+        <div class="component-block">
+          <div class="component-type"><span>${ct.type}</span>${avg}</div>
+          <table>${rows}</table>
+        </div>
+      `;
+    }
+
+    function renderChainBlock(c) {
+      if (!c.active) {
+        return `<div class="chain-block">Łańcuch ${c.id} - łącznie ${fmtKm(c.total_km_computed)} (obecnie zdjęty, czeka na kolejną rotację)</div>`;
+      }
+      const pct = Math.min(100, (c.current_km_computed / c.rotation_km) * 100);
+      const warnClass = c.remaining_km <= 50 ? 'warn' : '';
+      return `
+        <div class="chain-block">
+          <div class="chain-head"><span>Łańcuch ${c.id} (zamontowany) - łącznie ${fmtKm(c.total_km_computed)}</span></div>
+          <div class="chain-bar"><div class="chain-bar-fill ${warnClass}" style="width:${pct}%"></div></div>
+          <div class="chain-sub">${fmtKm(c.current_km_computed)} / ${c.rotation_km} km od ostatniej rotacji - pozostało ${fmtKm(c.remaining_km)}</div>
+        </div>
+      `;
+    }
+
+    async function loadGearSummary() {
+      const resp = await fetch('/api/gear-summary');
+      const data = await resp.json();
+      const container = document.getElementById('gear-cards');
+      container.innerHTML = Object.entries(data).map(([gearId, summary]) => `
+        <div class="gear-card">
+          <h3>${BIKE_NAMES[gearId] || gearId}</h3>
+          <div class="gear-total">Łączny przebieg: <strong>${fmtKm(summary.total_km_computed)}</strong></div>
+          ${summary.component_types.map(renderComponentBlock).join('')}
+          ${summary.chains.length ? `<div class="component-type">Rotacja łańcuchów</div>${summary.chains.map(renderChainBlock).join('')}` : ''}
+        </div>
+      `).join('');
+    }
+
+    function loadAll() {
+      loadPower();
+      loadSpeed();
+      loadFtp();
+      loadFtpCards();
+      loadGearSummary();
+    }
+
+    bikeSel.addEventListener('change', loadAll);
+    durationSel.addEventListener('change', loadPower);
+    ftpMethodSel.addEventListener('change', loadFtp);
+
+    document.getElementById('sync-btn').addEventListener('click', async () => {
+      statusEl.textContent = 'Synchronizacja w toku (może potrwać kilka minut przy pierwszym uruchomieniu)...';
+      const resp = await fetch('/api/sync', { method: 'POST' });
+      if (resp.ok) {
+        statusEl.textContent = 'Zsynchronizowano.';
+        loadAll();
+      } else {
+        statusEl.textContent = 'Błąd synchronizacji - sprawdź konsolę serwera.';
+      }
+    });
+
+    loadAll();
+  </script>
+</body>
+</html>

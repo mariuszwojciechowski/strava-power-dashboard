@@ -1,0 +1,19 @@
+{
+  "b_przyklad_gear_id": {
+    "total_km": 100,
+    "components": {
+      "Opona przednia": [
+        {"brand": "Marka", "model": "Model", "start_date": "2024-01-01", "end_date": null, "km": 100}
+      ],
+      "Klocki przód": [
+        {"brand": "Marka", "model": "Model", "start_date": "2024-01-01", "end_date": null, "km": 100}
+      ]
+    },
+    "chains": {
+      "1": [
+        {"start_date": "2024-01-01", "end_date": null, "km": 100}
+      ],
+      "2": []
+    }
+  }
+}
