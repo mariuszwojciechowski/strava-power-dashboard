@@ -272,7 +272,7 @@ def settings():
             elif not raw_text.strip():
                 message = "Wklej najpierw dane z zakładki Sprzęt w Strava."
             else:
-                parsed = components_parser.parse_strava_components(raw_text)
+                parsed = components_parser.parse_strava_components(raw_text, gear_id=gear_id)
                 components_module.save_bike_data(gear_id, parsed)
                 n_types = len(parsed["components"])
                 n_chains = sum(1 for segs in parsed["chains"].values() if segs)

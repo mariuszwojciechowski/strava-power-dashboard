@@ -485,6 +485,22 @@
       return `${v.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} km`;
     }
 
+    function renderFreshness(f) {
+      if (!f) return '';
+      const pct = Math.min(100, (f.days_since / f.replace_days) * 100);
+      const warnClass = f.topup_due ? 'warn' : '';
+      const topupMsg = f.topup_due
+        ? `<strong>dolewka zalecana teraz</strong> (${f.days_since} dni od ostatniej)`
+        : `dolewka za ${f.topup_remaining_days} dni`;
+      const replaceMsg = f.replace_due
+        ? `<strong>wymiana zalecana teraz</strong>`
+        : `wymiana za ${f.replace_remaining_days} dni`;
+      return `
+        <div class="chain-bar"><div class="chain-bar-fill ${warnClass}" style="width:${pct}%"></div></div>
+        <div class="chain-sub">${f.days_since} dni od dolewki - ${topupMsg}, ${replaceMsg}</div>
+      `;
+    }
+
     function renderComponentBlock(ct) {
       const rows = ct.items.map(it => `
         <tr>
@@ -499,6 +515,7 @@
         <div class="component-block">
           <div class="component-type"><span>${ct.type}</span>${avg}</div>
           <table>${rows}</table>
+          ${renderFreshness(ct.freshness)}
         </div>
       `;
     }

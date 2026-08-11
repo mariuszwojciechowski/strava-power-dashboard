@@ -1,11 +1,18 @@
 import json
 import os
+from datetime import date
 
 import db
 from config import BASE_DIR
 
 DATA_FILE = os.path.join(BASE_DIR, "components_data.json")
 CHAIN_ROTATION_KM = 400
+
+# Świeżość zależy od czasu, nie od km - mleczko w oponach wysycha nawet gdy rower stoi.
+# Progi to rozsądny wspólny mianownik dla różnych marek/mleczek używanych jednocześnie.
+TIME_BASED_TYPES = {
+    "Mleczko (uszczelniacz)": {"topup_days": 90, "replace_days": 180},
+}
 
 
 def _load_all():
@@ -51,13 +58,37 @@ def _enrich(conn, gear_id, item):
     }
 
 
+def _freshness(ctype, enriched):
+    thresholds = TIME_BASED_TYPES.get(ctype)
+    if not thresholds:
+        return None
+    current = next((it for it in enriched if it["active"]), None)
+    if not current or not current.get("start_date"):
+        return None
+    days_since = (date.today() - date.fromisoformat(current["start_date"])).days
+    return {
+        "days_since": days_since,
+        "topup_days": thresholds["topup_days"],
+        "replace_days": thresholds["replace_days"],
+        "topup_due": days_since >= thresholds["topup_days"],
+        "replace_due": days_since >= thresholds["replace_days"],
+        "topup_remaining_days": max(0, thresholds["topup_days"] - days_since),
+        "replace_remaining_days": max(0, thresholds["replace_days"] - days_since),
+    }
+
+
 def _component_types(conn, gear_id, bike_data):
     result = []
     for ctype, items in bike_data.get("components", {}).items():
         enriched = [_enrich(conn, gear_id, it) for it in items]
         finished = [it["km_computed"] for it in enriched if not it["active"]]
         avg_km = round(sum(finished) / len(finished), 1) if finished else None
-        result.append({"type": ctype, "items": enriched, "avg_lifetime_km": avg_km})
+        result.append({
+            "type": ctype,
+            "items": enriched,
+            "avg_lifetime_km": avg_km,
+            "freshness": _freshness(ctype, enriched),
+        })
     return result
 
 

@@ -12,6 +12,22 @@ TYPE_MAP = {
 }
 
 CHAIN_HISTORY_TYPE = "Łańcuch (pełne życie, sprzed rotacji)"
+SEALANT_TYPE = "Mleczko (uszczelniacz)"
+
+# Rowery, które używają nieużywanego u nich slotu komponentu do śledzenia czegoś innego
+# (np. gravel bez przedniej przerzutki -> ten slot służy do logowania dolewek mleczka).
+BIKE_TYPE_OVERRIDES = {
+    "b17153935": {"Front Derailleur": SEALANT_TYPE},
+}
+
+# Ręczne korekty tam, gdzie automatyczna reguła (cyfra 1/2 w polu brand) nie wystarcza -
+# np. łańcuch założony zanim zaczęto numerować rotację, a który fizycznie jest tym samym
+# łańcuchem co późniejszy "slot 1".
+CHAIN_HISTORY_FIXUPS = {
+    "b17153935": [
+        {"model_contains": "CN-M8100", "end_before": "2026-04-16", "target_slot": "1"},
+    ],
+}
 
 
 def _parse_date(raw):
@@ -43,11 +59,31 @@ def _sort_key(item):
     return item["start_date"] or "0000-00-00"
 
 
-def parse_strava_components(raw_text):
+def _apply_chain_history_fixups(gear_id, chain_history, chains):
+    remaining = []
+    for entry in chain_history:
+        moved = False
+        for rule in CHAIN_HISTORY_FIXUPS.get(gear_id, []):
+            if rule["model_contains"] not in entry["model"]:
+                continue
+            if not entry["end_date"] or entry["end_date"] >= rule["end_before"]:
+                continue
+            chains.setdefault(rule["target_slot"], []).append({
+                "start_date": entry["start_date"], "end_date": entry["end_date"], "km": entry["km"],
+            })
+            moved = True
+            break
+        if not moved:
+            remaining.append(entry)
+    return remaining
+
+
+def parse_strava_components(raw_text, gear_id=None):
     components = {}
     chains = {"1": [], "2": []}
     chain_history = []
     total_km = None
+    type_overrides = BIKE_TYPE_OVERRIDES.get(gear_id, {})
 
     for line in raw_text.splitlines():
         line = line.rstrip()
@@ -86,7 +122,7 @@ def parse_strava_components(raw_text):
                 })
             continue
 
-        pl_type = TYPE_MAP.get(type_)
+        pl_type = type_overrides.get(type_) or TYPE_MAP.get(type_)
         if not pl_type:
             continue
 
@@ -95,6 +131,7 @@ def parse_strava_components(raw_text):
             "start_date": start_date, "end_date": end_date, "km": km,
         })
 
+    chain_history = _apply_chain_history_fixups(gear_id, chain_history, chains)
     if chain_history:
         components[CHAIN_HISTORY_TYPE] = chain_history
 
