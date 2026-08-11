@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from urllib.parse import urlencode
 
 import requests as http_requests
@@ -9,6 +10,7 @@ import components_parser
 import config
 import db
 import lab_tests as lab_tests_module
+import seasons
 import strava_client
 import sync as sync_module
 
@@ -42,14 +44,14 @@ def _load_activities_df():
     return df
 
 
-def _series_response(df, value_col):
+def _series_response(df, value_col, id_col="activity_id"):
     if df.empty:
         return {"raw": [], "monthly_best": [], "rolling_avg": []}
 
     df = df.sort_values("start_date")
     raw = [
-        {"date": d.strftime("%Y-%m-%d"), "value": v, "name": n}
-        for d, v, n in zip(df["start_date"], df[value_col], df["name"])
+        {"date": d.strftime("%Y-%m-%d"), "value": v, "name": n, "id": int(i)}
+        for d, v, n, i in zip(df["start_date"], df[value_col], df["name"], df[id_col])
     ]
 
     monthly = df.set_index("start_date")[value_col].resample("MS").max().dropna()
@@ -64,7 +66,15 @@ def _series_response(df, value_col):
 
 @app.route("/")
 def index():
-    return render_template("index.html", bikes=config.get_bikes(), durations=config.PEAK_DURATIONS_MIN)
+    hero_photo = os.path.exists(os.path.join(config.BASE_DIR, "static", "hero.webp"))
+    gear_photo = os.path.exists(os.path.join(config.BASE_DIR, "static", "gear-bg.webp"))
+    return render_template(
+        "index.html",
+        bikes=config.get_bikes(),
+        durations=config.PEAK_DURATIONS_MIN,
+        hero_photo=hero_photo,
+        gear_photo=gear_photo,
+    )
 
 
 @app.route("/api/sync", methods=["POST"])
@@ -97,7 +107,7 @@ def api_speed():
         if bike != "all":
             df = df[df["gear_id"] == bike]
 
-    return jsonify(_series_response(df, "max_speed_kmh"))
+    return jsonify(_series_response(df, "max_speed_kmh", id_col="id"))
 
 
 FTP_SHORT_S = 180
@@ -129,7 +139,7 @@ def _ftp_dataframe(method, bike):
         )
         sub = pivot
 
-    return sub[["start_date", "gear_id", "name", "value"]]
+    return sub[["activity_id", "start_date", "gear_id", "name", "value"]]
 
 
 @app.route("/api/ftp")
@@ -138,6 +148,70 @@ def api_ftp():
     method = request.args.get("method", "critical_power")
     df = _ftp_dataframe(method, bike)
     return jsonify(_series_response(df, "value"))
+
+
+@app.route("/api/periods")
+def api_periods():
+    bike = request.args.get("bike", "all")
+    df = _load_peaks_df()
+    if not df.empty and bike != "all":
+        df = df[df["gear_id"] == bike]
+
+    today = date.today()
+    if df.empty:
+        min_date = max_date = today
+    else:
+        min_date = df["start_date"].min().date()
+        max_date = max(df["start_date"].max().date(), today)
+
+    periods = seasons.season_periods(min_date, max_date)
+    current = seasons.current_period(periods, today)
+    return jsonify({"periods": periods, "current": current})
+
+
+@app.route("/api/power-summary")
+def api_power_summary():
+    import pandas as pd
+
+    bike = request.args.get("bike", "all")
+    period_start = request.args.get("period_start")
+    period_end = request.args.get("period_end")
+
+    df = _load_peaks_df()
+    if not df.empty and bike != "all":
+        df = df[df["gear_id"] == bike]
+
+    rows = []
+    for duration_s, duration_min in zip(config.PEAK_DURATIONS_S, config.PEAK_DURATIONS_MIN):
+        sub = df[df["duration_s"] == duration_s] if not df.empty else df
+
+        global_best = None
+        if not sub.empty:
+            row = sub.loc[sub["power_w"].idxmax()]
+            global_best = {
+                "value": round(float(row["power_w"]), 1),
+                "date": row["start_date"].strftime("%Y-%m-%d"),
+                "name": row["name"],
+                "id": int(row["activity_id"]),
+            }
+
+        period_best = None
+        if period_start and period_end and not sub.empty:
+            start_ts = pd.Timestamp(period_start, tz="UTC")
+            end_ts = pd.Timestamp(period_end, tz="UTC") + pd.Timedelta(days=1)
+            p_sub = sub[(sub["start_date"] >= start_ts) & (sub["start_date"] < end_ts)]
+            if not p_sub.empty:
+                row = p_sub.loc[p_sub["power_w"].idxmax()]
+                period_best = {
+                    "value": round(float(row["power_w"]), 1),
+                    "date": row["start_date"].strftime("%Y-%m-%d"),
+                    "name": row["name"],
+                    "id": int(row["activity_id"]),
+                }
+
+        rows.append({"duration_min": duration_min, "global": global_best, "period": period_best})
+
+    return jsonify(rows)
 
 
 @app.route("/api/gear-summary")

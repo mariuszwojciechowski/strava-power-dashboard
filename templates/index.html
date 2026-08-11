@@ -5,11 +5,27 @@
   <title>Strava - piki mocy</title>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <style>
-    body { font-family: -apple-system, Arial, sans-serif; margin: 24px; background: #f7f7f8; color: #1a1a1a; }
+    :root { --accent: #fc4c02; --accent-dark: #c73d00; }
+    body { font-family: -apple-system, Arial, sans-serif; margin: 24px; background: #f7f6f4; color: #1a1a1a; }
     h1 { font-size: 20px; }
+    .hero {
+      position: relative; overflow: hidden; border-radius: 12px; margin-bottom: 20px;
+      background: linear-gradient(180deg, #cf6b3a 0%, #8a4a3a 40%, #26292f 100%);
+      padding: 30px 24px 22px; min-height: 130px; display: flex; align-items: flex-end;
+    }
+    .hero.hero-photo {
+      background-size: cover; background-position: center 55%;
+    }
+    .hero-mountains { position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; display: block; }
+    .hero-content { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; width: 100%; }
+    .hero h1 { color: white; margin: 0; font-size: 22px; text-shadow: 0 1px 4px rgba(0,0,0,0.35); }
+    .hero .settings-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.55); color: white; }
+    .hero .settings-btn:hover { background: rgba(255,255,255,0.28); }
     .controls { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
     select, button { padding: 6px 10px; font-size: 14px; }
     button { cursor: pointer; }
+    #sync-btn { background: var(--accent); color: white; border: 1px solid var(--accent-dark); border-radius: 6px; }
+    #sync-btn:hover { background: var(--accent-dark); }
     #status { color: #666; font-size: 13px; margin-left: 8px; }
     .chart { background: white; border-radius: 8px; padding: 8px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .chart-row { display: flex; gap: 12px; }
@@ -24,8 +40,18 @@
     .hover-panel .hp-label { color: #666; padding-right: 8px; }
     .hover-panel .hp-value { text-align: right; white-space: nowrap; }
     .hover-panel .hp-name { color: #999; font-size: 11px; display: block; }
+    .hp-name a, .sv-name a { color: inherit; text-decoration: none; }
+    .hp-name a:hover, .sv-name a:hover { text-decoration: underline; }
     .hoverlayer { opacity: 0 !important; }
     h2 { font-size: 17px; margin: 0 0 12px; }
+    .table-watermark { position: relative; }
+    .table-watermark::before {
+      content: ''; position: absolute; inset: 0;
+      background-image: var(--wm-url); background-size: cover; background-position: center;
+      filter: grayscale(1) brightness(1.6) contrast(0.85);
+      opacity: 0.1; pointer-events: none; z-index: 0; border-radius: inherit;
+    }
+    .table-watermark > * { position: relative; z-index: 1; }
     .gear-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
     .gear-card { border: 1px solid #eee; border-radius: 8px; padding: 14px 16px; }
     .gear-card h3 { margin: 0 0 4px; font-size: 15px; }
@@ -41,7 +67,7 @@
     .chain-block { margin-bottom: 10px; font-size: 13px; }
     .chain-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
     .chain-bar { background: #eee; border-radius: 4px; height: 8px; overflow: hidden; }
-    .chain-bar-fill { background: #1f6feb; height: 100%; }
+    .chain-bar-fill { background: var(--accent); height: 100%; }
     .chain-bar-fill.warn { background: #d62728; }
     .chain-sub { color: #777; font-size: 11.5px; margin-top: 3px; }
     .muted { color: #999; font-size: 13px; }
@@ -52,10 +78,39 @@
     .ftp-card-date { font-size: 11px; color: #999; }
     .ftp-card.lab { border-color: #9467bd; background: #faf8fc; }
     .ftp-card.lab .ftp-card-value { color: #9467bd; }
+    button.settings-btn { background: white; border: 1px solid #ccc; border-radius: 6px; }
+    .section-toggles { display: flex; gap: 10px; margin-bottom: 16px; }
+    button.toggle-btn { background: white; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; }
+    button.toggle-btn.open { background: var(--accent); color: white; }
+    .collapsible { display: none; }
+    .collapsible.open { display: block; }
+    .summary-table { width: auto; max-width: 560px; border-collapse: collapse; margin: 8px 0 20px; font-size: 14px; }
+    .summary-table th, .summary-table td { padding: 6px 16px; text-align: right; border-bottom: 1px solid #f0f0f0; }
+    .summary-table th:first-child, .summary-table td:first-child { text-align: left; }
+    .summary-table thead th { color: #666; font-weight: 600; font-size: 12.5px; }
+    .summary-table .sv-value { font-weight: 700; font-size: 15px; }
+    .summary-table .sv-date { display: block; font-size: 11px; color: #888; font-weight: 400; }
+    .summary-table .sv-name { display: block; font-size: 10px; color: #aaa; font-weight: 400; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: auto; }
+    .summary-table .sv-empty { color: #bbb; }
+    .season-badge { font-size: 12px; margin-left: 3px; }
   </style>
 </head>
 <body>
-  <h1>Piki mocy i prędkości maksymalne <a href="/settings" style="font-size:13px; font-weight:400;">Ustawienia</a></h1>
+  <div class="hero{{ ' hero-photo' if hero_photo else '' }}"
+       {% if hero_photo %}style="background-image: linear-gradient(180deg, rgba(20,16,14,0.15), rgba(10,8,8,0.85)), url('/static/hero.webp');"{% endif %}>
+    {% if not hero_photo %}
+    <svg class="hero-mountains" viewBox="0 0 800 90" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points="0,90 0,55 50,20 95,50 150,10 210,60 270,25 330,58 390,15 450,55 520,22 580,60 640,30 700,58 750,35 800,55 800,90"
+               fill="#1b1e23" opacity="0.55"/>
+      <polygon points="0,90 0,70 60,42 130,72 190,38 250,75 320,45 385,74 450,40 520,72 590,44 660,74 720,48 780,70 800,65 800,90"
+               fill="#14161a"/>
+    </svg>
+    {% endif %}
+    <div class="hero-content">
+      <h1>Prędkości maksymalne</h1>
+      <button type="button" class="settings-btn" onclick="location.href='/settings'">Ustawienia</button>
+    </div>
+  </div>
 
   <div class="controls">
     <label>Rower:
@@ -67,24 +122,10 @@
       </select>
     </label>
 
-    <label>Czas trwania (moc):
-      <select id="duration">
-        {% for d in durations %}
-        <option value="{{ d * 60 }}">{{ d }} min</option>
-        {% endfor %}
-      </select>
-    </label>
-
     <button id="sync-btn">Synchronizuj ze Stravą</button>
     <span id="status"></span>
   </div>
 
-  <div class="chart">
-    <div class="chart-row">
-      <div id="power-chart" class="chart-plot" style="height:420px;"></div>
-      <div id="power-info" class="hover-panel">Najedź na punkt na wykresie, żeby zobaczyć wartości.</div>
-    </div>
-  </div>
   <div class="chart">
     <div class="chart-row">
       <div id="speed-chart" class="chart-plot" style="height:420px;"></div>
@@ -92,7 +133,47 @@
     </div>
   </div>
 
-  <div class="chart">
+  <div class="section-toggles">
+    <button type="button" class="toggle-btn" id="toggle-power">Piki mocy</button>
+    <button type="button" class="toggle-btn" id="toggle-ftp">FTP (szacowane)</button>
+  </div>
+
+  <div class="chart collapsible" id="power-section">
+    <h2>Zestawienie pików mocy</h2>
+    <div class="controls">
+      <label>Okres porównawczy:
+        <select id="period-select"></select>
+      </label>
+    </div>
+    <div class="table-watermark" {% if hero_photo %}style="--wm-url:url('/static/hero.webp')"{% endif %}>
+      <table class="summary-table" id="power-summary-table">
+        <thead>
+          <tr>
+            <th>Czas</th>
+            <th>Maksimum globalne</th>
+            <th id="period-col-header">Okres</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="controls">
+      <label>Czas trwania (moc):
+        <select id="duration">
+          {% for d in durations %}
+          <option value="{{ d * 60 }}">{{ d }} min</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="chart-row">
+      <div id="power-chart" class="chart-plot" style="height:420px;"></div>
+      <div id="power-info" class="hover-panel">Najedź na punkt na wykresie, żeby zobaczyć wartości.</div>
+    </div>
+  </div>
+
+  <div class="chart collapsible" id="ftp-section">
     <h2>FTP (szacowane)</h2>
     <div id="ftp-cards" class="ftp-cards">Ładowanie...</div>
     <div class="controls">
@@ -117,6 +198,7 @@
 
   <script>
     const BIKE_NAMES = {{ bikes | tojson }};
+    const GEAR_BG_URL = {{ ("/static/gear-bg.webp" if gear_photo else "") | tojson }};
   </script>
   <script>
     const bikeSel = document.getElementById('bike');
@@ -163,6 +245,7 @@
           x: data.raw.map(p => p.date),
           y: data.raw.map(p => p.value),
           text: data.raw.map(p => p.name),
+          customdata: data.raw.map(p => p.id),
           mode: 'markers',
           type: 'scatter',
           name: 'Pojedynczy przejazd',
@@ -193,6 +276,7 @@
           x: [best.date],
           y: [best.value],
           text: [best.name],
+          customdata: [best.id],
           mode: 'markers',
           type: 'scatter',
           name: 'Maksimum globalne',
@@ -214,18 +298,108 @@
       return { tickmode: 'linear', tick0, dtick: `M${step}`, tickformat: '%b %Y' };
     }
 
+    function activityLink(id, label) {
+      return `<a href="https://www.strava.com/activities/${id}" target="_blank" rel="noopener">${label}</a>`;
+    }
+
     function attachHoverPanel(chartId, panelId) {
       const chartDiv = document.getElementById(chartId);
       const panel = document.getElementById(panelId);
       chartDiv.on('plotly_hover', (evt) => {
         if (!evt.points || !evt.points.length) return;
         const rows = evt.points.map(pt => {
-          const extra = pt.text ? `<span class="hp-name">${pt.text}</span>` : '';
+          let extra = '';
+          if (pt.text) {
+            const label = pt.customdata != null ? activityLink(pt.customdata, pt.text) : pt.text;
+            extra = `<span class="hp-name">${label}</span>`;
+          }
           return `<tr><td class="hp-label">${pt.data.name}${extra}</td><td class="hp-value">${Number(pt.y).toFixed(1)}</td></tr>`;
         }).join('');
         panel.innerHTML = `<div class="hp-date">${evt.points[0].x}</div><table>${rows}</table>`;
       });
     }
+
+    const periodSel = document.getElementById('period-select');
+    const periodColHeader = document.getElementById('period-col-header');
+
+    function ageColor(dateStr) {
+      const days = (Date.now() - new Date(dateStr).getTime()) / 86400000;
+      const maxDays = 365 * 3;
+      const t = Math.min(1, Math.max(0, days / maxDays));
+      const hue = 120 * (1 - t);
+      return `hsl(${hue}, 70%, 38%)`;
+    }
+
+    function diffColor(value, referenceValue) {
+      if (!referenceValue) return ageColor(new Date().toISOString());
+      const diffPct = Math.max(0, (referenceValue - value) / referenceValue * 100);
+      const maxDiffPct = 15;
+      const t = Math.min(1, diffPct / maxDiffPct);
+      const hue = 120 * (1 - t);
+      return `hsl(${hue}, 70%, 38%)`;
+    }
+
+    function seasonBadge(dateStr) {
+      const month = new Date(dateStr).getMonth() + 1;
+      const isWinter = month === 11 || month === 12 || month <= 3;
+      return isWinter
+        ? '<span class="season-badge" title="Okres treningowy (zima)">🥶</span>'
+        : '<span class="season-badge" title="Okres letni">🔥</span>';
+    }
+
+    function renderSummaryCell(entry, color, badge) {
+      if (!entry) return '<span class="sv-empty">brak danych</span>';
+      const name = entry.name != null && entry.id != null ? activityLink(entry.id, entry.name) : (entry.name || '');
+      return `
+        <span class="sv-value" style="color:${color}">${Math.round(entry.value)} W${badge || ''}</span>
+        <span class="sv-date">${entry.date}</span>
+        <span class="sv-name">${name}</span>
+      `;
+    }
+
+    async function loadPeriods() {
+      const bike = bikeSel.value;
+      const data = await fetch(`/api/periods?bike=${bike}`).then(r => r.json());
+      periodSel.innerHTML = data.periods.map(p => `<option value="${p.start}|${p.end}">${p.label}</option>`).join('');
+      if (data.current) {
+        periodSel.value = `${data.current.start}|${data.current.end}`;
+        periodColHeader.textContent = data.current.label;
+      }
+    }
+
+    async function loadPowerSummary() {
+      const bike = bikeSel.value;
+      const [periodStart, periodEnd] = (periodSel.value || '').split('|');
+      const selectedOption = periodSel.options[periodSel.selectedIndex];
+      if (selectedOption) periodColHeader.textContent = selectedOption.textContent;
+
+      const params = new URLSearchParams({ bike });
+      if (periodStart && periodEnd) {
+        params.set('period_start', periodStart);
+        params.set('period_end', periodEnd);
+      }
+      const rows = await fetch(`/api/power-summary?${params}`).then(r => r.json());
+      const tbody = document.querySelector('#power-summary-table tbody');
+      tbody.innerHTML = rows.map(r => {
+        const globalColor = r.global ? ageColor(r.global.date) : null;
+        const globalBadge = r.global ? seasonBadge(r.global.date) : '';
+        const periodColor = r.period ? diffColor(r.period.value, r.global ? r.global.value : null) : null;
+        return `
+          <tr>
+            <td>${r.duration_min} min</td>
+            <td>${renderSummaryCell(r.global, globalColor, globalBadge)}</td>
+            <td>${renderSummaryCell(r.period, periodColor)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadPowerOverview() {
+      await loadPeriods();
+      await loadPowerSummary();
+    }
+
+    periodSel.addEventListener('change', loadPowerSummary);
 
     async function loadPower() {
       const bike = bikeSel.value;
@@ -348,8 +522,9 @@
       const resp = await fetch('/api/gear-summary');
       const data = await resp.json();
       const container = document.getElementById('gear-cards');
+      const wmStyle = GEAR_BG_URL ? ` style="--wm-url:url('${GEAR_BG_URL}')"` : '';
       container.innerHTML = Object.entries(data).map(([gearId, summary]) => `
-        <div class="gear-card">
+        <div class="gear-card table-watermark"${wmStyle}>
           <h3>${BIKE_NAMES[gearId] || gearId}</h3>
           <div class="gear-total">Łączny przebieg: <strong>${fmtKm(summary.total_km_computed)}</strong></div>
           ${summary.component_types.map(renderComponentBlock).join('')}
@@ -358,12 +533,34 @@
       `).join('');
     }
 
+    const powerSection = document.getElementById('power-section');
+    const ftpSection = document.getElementById('ftp-section');
+    const togglePowerBtn = document.getElementById('toggle-power');
+    const toggleFtpBtn = document.getElementById('toggle-ftp');
+    let powerLoaded = false;
+    let ftpLoaded = false;
+
+    function setupToggle(button, section, onFirstOpen) {
+      let opened = false;
+      button.addEventListener('click', () => {
+        opened = !opened;
+        section.classList.toggle('open', opened);
+        button.classList.toggle('open', opened);
+        if (opened && !section.dataset.loaded) {
+          section.dataset.loaded = '1';
+          onFirstOpen();
+        }
+      });
+    }
+
+    setupToggle(togglePowerBtn, powerSection, () => { powerLoaded = true; loadPowerOverview(); loadPower(); });
+    setupToggle(toggleFtpBtn, ftpSection, () => { ftpLoaded = true; loadFtp(); loadFtpCards(); });
+
     function loadAll() {
-      loadPower();
       loadSpeed();
-      loadFtp();
-      loadFtpCards();
       loadGearSummary();
+      if (powerLoaded) { loadPowerOverview(); loadPower(); }
+      if (ftpLoaded) { loadFtp(); loadFtpCards(); }
     }
 
     bikeSel.addEventListener('change', loadAll);
