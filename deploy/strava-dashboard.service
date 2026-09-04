@@ -1,0 +1,29 @@
+[Unit]
+Description=Strava Power Dashboard (Flask/gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=stravadash
+Group=stravadash
+WorkingDirectory=/opt/strava-power-dashboard
+
+# Nasłuch TYLKO na loopbacku — z internetu wejście wyłącznie przez Caddy (HTTPS).
+ExecStart=/opt/strava-power-dashboard/venv/bin/gunicorn -b 127.0.0.1:8322 app:app
+
+Restart=always
+RestartSec=3
+
+# Ograniczenie uprawnień procesu.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/strava-power-dashboard
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

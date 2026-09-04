@@ -1,0 +1,38 @@
+name: Deploy na GCP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # ręczny przycisk w zakładce Actions
+
+concurrency:
+  group: deploy-production  # nie nakładaj dwóch wdrożeń na siebie
+  cancel-in-progress: false
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Instalacja zależności
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Import appki (smoke test)
+        run: python -c "import app"
+
+  deploy:
+    needs: smoke-test          # zły kod nie trafia na serwer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wdrożenie przez SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          script: bash /opt/strava-power-dashboard/deploy/deploy.sh
