@@ -18,7 +18,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 2. Uruchomienie i konfiguracja
+## 2.. Uruchomienie i konfiguracja
 
 ```bash
 ./start.sh
