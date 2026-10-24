@@ -586,8 +586,14 @@
 
     document.getElementById('sync-btn').addEventListener('click', async () => {
       statusEl.textContent = 'Synchronizacja w toku (może potrwać kilka minut przy pierwszym uruchomieniu)...';
-      const resp = await fetch('/api/sync', { method: 'POST' });
-      if (resp.ok) {
+      let resp = await fetch('/api/sync', { method: 'POST' });
+      let state = resp.ok ? await resp.json() : null;
+      while (state && state.running) {
+        await new Promise(r => setTimeout(r, 3000));
+        resp = await fetch('/api/sync/status');
+        state = resp.ok ? await resp.json() : null;
+      }
+      if (state && !state.error) {
         statusEl.textContent = 'Zsynchronizowano.';
         loadAll();
       } else {

@@ -1,5 +1,6 @@
 import os
-from datetime import date
+import threading
+from datetime import date, datetime
 from urllib.parse import urlencode
 
 import requests as http_requests
@@ -77,10 +78,35 @@ def index():
     )
 
 
+# Sync w wątku w tle - pełna historia trwa minuty, a gunicorn ubija workera po 30 s.
+_sync_lock = threading.Lock()
+_sync_state = {"running": False, "error": None, "finished_at": None}
+
+
+def _run_sync():
+    try:
+        sync_module.sync()
+        _sync_state["error"] = None
+    except BaseException as exc:
+        _sync_state["error"] = str(exc) or exc.__class__.__name__
+        app.logger.exception("Sync nie powiódł się")
+    finally:
+        _sync_state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        _sync_state["running"] = False
+        _sync_lock.release()
+
+
 @app.route("/api/sync", methods=["POST"])
 def api_sync():
-    sync_module.sync()
-    return jsonify({"status": "ok"})
+    if _sync_lock.acquire(blocking=False):
+        _sync_state["running"] = True
+        threading.Thread(target=_run_sync, daemon=True).start()
+    return jsonify(_sync_state)
+
+
+@app.route("/api/sync/status")
+def api_sync_status():
+    return jsonify(_sync_state)
 
 
 @app.route("/api/power")
