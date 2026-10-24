@@ -245,6 +245,37 @@ def api_gear_summary():
     return jsonify({gear_id: components_module.bike_summary(gear_id) for gear_id in config.get_bikes()})
 
 
+@app.route("/api/ramp-tests")
+def api_ramp_tests():
+    conn = db.get_conn()
+    rows = conn.execute(
+        "SELECT id, name, start_date FROM activities WHERE has_power = 1 ORDER BY start_date"
+    ).fetchall()
+    tests = []
+    for activity_id, name, start_date in rows:
+        protocol = sync_module.ramp_protocol(activity_id, name)
+        if not protocol:
+            continue
+        peak = conn.execute(
+            "SELECT power_w FROM peaks WHERE activity_id = ? AND duration_s = ?",
+            (activity_id, protocol["peak_s"]),
+        ).fetchone()
+        if not peak or peak[0] is None:
+            continue
+        tests.append({
+            "id": activity_id,
+            "name": name,
+            "date": start_date[:10],
+            "protocol": protocol["label"],
+            "peak_s": protocol["peak_s"],
+            "peak_w": round(peak[0], 1),
+            "factor": protocol["factor"],
+            "value": round(peak[0] * protocol["factor"]),
+        })
+    conn.close()
+    return jsonify(tests)
+
+
 @app.route("/api/lab-tests")
 def api_lab_tests():
     return jsonify(lab_tests_module.get_tests())

@@ -78,6 +78,8 @@
     .ftp-card-date { font-size: 11px; color: #999; }
     .ftp-card.lab { border-color: #9467bd; background: #faf8fc; }
     .ftp-card.lab .ftp-card-value { color: #9467bd; }
+    .ftp-card.ramp { border-color: #ff7f0e; background: #fff8f1; }
+    .ftp-card.ramp .ftp-card-value { color: #ff7f0e; }
     button.settings-btn { background: white; border: 1px solid #ccc; border-radius: 6px; }
     .section-toggles { display: flex; gap: 10px; margin-bottom: 16px; }
     button.toggle-btn { background: white; border: 1px solid var(--accent); color: var(--accent); border-radius: 6px; }
@@ -221,6 +223,31 @@
         labFtpTestsCache = await fetch('/api/lab-tests').then(r => r.json());
       }
       return labFtpTestsCache;
+    }
+
+    // Testy rampowe: FTP = współczynnik protokołu × najlepsza moc z jego okna (np. 75% z 1 min).
+    // /api/ramp-tests bez cache, bo po syncu może dojść nowy test.
+    function rampFormula(t) {
+      const pct = (t.factor * 100).toLocaleString('pl-PL');
+      const minutes = (t.peak_s / 60).toLocaleString('pl-PL');
+      return `${pct}% z ${Math.round(t.peak_w)} W (${minutes} min)`;
+    }
+
+    function getRampTests() {
+      return fetch('/api/ramp-tests').then(r => r.json());
+    }
+
+    function rampFtpTrace(tests) {
+      return {
+        x: tests.map(t => t.date),
+        y: tests.map(t => t.value),
+        text: tests.map(t => `${t.name} - ${t.protocol}, ${rampFormula(t)}`),
+        customdata: tests.map(t => t.id),
+        mode: 'markers',
+        type: 'scatter',
+        name: 'Test rampowy',
+        marker: { size: 12, color: '#ff7f0e', symbol: 'diamond', line: { color: '#fff', width: 1 } },
+      };
     }
 
     function labFtpTraces(dateRange, tests) {
@@ -438,9 +465,11 @@
       const method = ftpMethodSel.value;
       const resp = await fetch(`/api/ftp?bike=${bike}&method=${method}`);
       const data = await resp.json();
-      const labTests = await getLabFtpTests();
-      const dateRange = data.raw.map(p => p.date).concat(labTests.map(t => t.date));
+      const [labTests, rampTests] = await Promise.all([getLabFtpTests(), getRampTests()]);
+      const dateRange = data.raw.map(p => p.date)
+        .concat(labTests.map(t => t.date), rampTests.map(t => t.date));
       const traces = buildTraces(data).concat(labFtpTraces(dateRange, labTests));
+      if (rampTests.length) traces.push(rampFtpTrace(rampTests));
       Plotly.newPlot('ftp-chart', traces, {
         title: `FTP - ${FTP_METHOD_LABELS[method]} (W)`,
         yaxis: { title: 'Watt' },
@@ -470,15 +499,23 @@
           </div>
         `;
       });
-      const labTests = await getLabFtpTests();
-      const labCards = labTests.map(test => `
+      const [labTests, rampTests] = await Promise.all([getLabFtpTests(), getRampTests()]);
+      // Testy (laboratorium + rampy) obok siebie chronologicznie, żeby dało się je porównać.
+      const testCards = labTests.map(t => ({ date: t.date, html: `
         <div class="ftp-card lab">
-          <div class="ftp-card-label">${test.label}</div>
-          <div class="ftp-card-value">${test.value} W</div>
-          <div class="ftp-card-date">test z dnia ${test.date}</div>
+          <div class="ftp-card-label">${t.label}</div>
+          <div class="ftp-card-value">${t.value} W</div>
+          <div class="ftp-card-date">test z dnia ${t.date}</div>
         </div>
-      `);
-      container.innerHTML = methodCards.concat(labCards).join('');
+      ` })).concat(rampTests.map((t, i) => ({ date: t.date, html: `
+        <div class="ftp-card ramp">
+          <div class="ftp-card-label">${i === rampTests.length - 1 ? 'Ostatni test rampowy' : 'Test rampowy'}</div>
+          <div class="ftp-card-value">${t.value} W</div>
+          <div class="ftp-card-date">${t.date}, ${t.protocol}<br>${rampFormula(t)}</div>
+        </div>
+      ` })));
+      testCards.sort((a, b) => a.date.localeCompare(b.date));
+      container.innerHTML = methodCards.concat(testCards.map(c => c.html)).join('');
     }
 
     function fmtKm(v) {

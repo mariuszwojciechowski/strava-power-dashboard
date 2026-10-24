@@ -72,6 +72,12 @@ def peaks_exist(conn, activity_id):
     return conn.execute("SELECT 1 FROM peaks WHERE activity_id = ? LIMIT 1", (activity_id,)).fetchone() is not None
 
 
+def peak_exists(conn, activity_id, duration_s):
+    return conn.execute(
+        "SELECT 1 FROM peaks WHERE activity_id = ? AND duration_s = ?", (activity_id, duration_s)
+    ).fetchone() is not None
+
+
 def get_last_sync_epoch(conn):
     row = conn.execute("SELECT value FROM sync_state WHERE key = 'last_after'").fetchone()
     return int(row[0]) if row else None

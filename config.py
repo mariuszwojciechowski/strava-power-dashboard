@@ -11,6 +11,21 @@ DB_FILE = os.path.join(BASE_DIR, "strava_data.db")
 PEAK_DURATIONS_MIN = [2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 60]
 PEAK_DURATIONS_S = [m * 60 for m in PEAK_DURATIONS_MIN]
 
+# Testy rampowe: FTP = współczynnik × najlepsza moc z okna dobranego do protokołu.
+# Wolniejsza rampa kończy się przy niższej mocy, więc potrzebuje wyższego współczynnika.
+RAMP_PROTOCOLS = {
+    "1min_20w": {"label": "rampa 1 min / +20 W", "peak_s": 60, "factor": 0.75},
+    "2min_30w": {"label": "rampa 2 min / +30 W", "peak_s": 150, "factor": 0.825},
+}
+# Przejazd liczy się jako rampa 1-minutowa po nazwie: "Rampa", "Ramp test", "Test rampowy" -
+# ale nie treningi typu "Aerobic Ramps".
+RAMP_NAME_PATTERN = r"\b(rampa|ramp[\s-]*test|test rampowy)\b"
+RAMP_DEFAULT_PROTOCOL = "1min_20w"
+# Rampy, których nazwa nie pasuje do wzorca albo mają inny protokół (Strava activity id).
+RAMP_EXTRA_ACTIVITIES = {
+    13405918058: "2min_30w",  # 2025-01-20 "Badania Ride" - rampa w SPORTSLAB z pomiarem mleczanu
+}
+
 # Ustawienia (Client ID/Secret, rowery) czytane na żywo z .env przy każdym wywołaniu,
 # żeby zmiany w zakładce Ustawienia działały bez restartu aplikacji.
 

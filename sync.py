@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime
 
@@ -11,6 +12,33 @@ RIDE_TYPES = {"Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRid
 
 def _to_epoch(iso_date):
     return int(datetime.fromisoformat(iso_date.replace("Z", "+00:00")).timestamp())
+
+
+def ramp_protocol(activity_id, name):
+    """Protokół rampy (dict z config.RAMP_PROTOCOLS) albo None, gdy przejazd nie jest rampą."""
+    key = config.RAMP_EXTRA_ACTIVITIES.get(activity_id)
+    if not key and re.search(config.RAMP_NAME_PATTERN, name or "", re.IGNORECASE):
+        key = config.RAMP_DEFAULT_PROTOCOL
+    return config.RAMP_PROTOCOLS[key] if key else None
+
+
+def _fetch_and_store_peaks(conn, activity_id, durations_s):
+    streams = sc.get_activity_streams(activity_id, keys=("time", "watts"))
+    if "time" in streams and "watts" in streams:
+        peaks = peak_powers(streams["time"]["data"], streams["watts"]["data"], durations_s)
+        db.upsert_peaks(conn, activity_id, peaks)
+        conn.commit()
+    time.sleep(1.2)
+
+
+def _backfill_ramp_peaks(conn):
+    # Rampy bez szczytu z okna swojego protokołu (np. zsynchronizowane wcześniej) - dociągamy go osobno.
+    rows = conn.execute("SELECT id, name FROM activities WHERE has_power = 1").fetchall()
+    for activity_id, name in rows:
+        protocol = ramp_protocol(activity_id, name)
+        if protocol and not db.peak_exists(conn, activity_id, protocol["peak_s"]):
+            _fetch_and_store_peaks(conn, activity_id, [protocol["peak_s"]])
+            print(f"Dociągnięto szczyt {protocol['peak_s']} s dla rampy: {name}")
 
 
 def sync():
@@ -54,12 +82,11 @@ def sync():
             conn.commit()
 
             if has_power and not db.peaks_exist(conn, act["id"]):
-                streams = sc.get_activity_streams(act["id"], keys=("time", "watts"))
-                if "time" in streams and "watts" in streams:
-                    peaks = peak_powers(streams["time"]["data"], streams["watts"]["data"], config.PEAK_DURATIONS_S)
-                    db.upsert_peaks(conn, act["id"], peaks)
-                    conn.commit()
-                time.sleep(1.2)
+                durations_s = list(config.PEAK_DURATIONS_S)
+                protocol = ramp_protocol(act["id"], act["name"])
+                if protocol and protocol["peak_s"] not in durations_s:
+                    durations_s.append(protocol["peak_s"])
+                _fetch_and_store_peaks(conn, act["id"], durations_s)
 
             if is_new:
                 total_new += 1
@@ -70,6 +97,7 @@ def sync():
     if newest_epoch:
         db.set_last_sync_epoch(conn, newest_epoch)
     conn.commit()
+    _backfill_ramp_peaks(conn)
     conn.close()
     print(f"Gotowe. Nowych przejazdów: {total_new}")
 
